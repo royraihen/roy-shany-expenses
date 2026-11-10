@@ -14,6 +14,24 @@ Future<void> saveWebStorageExpensesJson(String jsonStr) async {
   web.window.localStorage.setItem(_storageKey, jsonStr);
 }
 
+String? consumeInitialWebSyncParam() {
+  try {
+    final search = web.window.location.search;
+    if (search.isEmpty || !search.contains('sync=')) return null;
+    final uri = Uri.tryParse('https://example.com/$search');
+    final syncVal = uri?.queryParameters['sync'];
+    if (syncVal != null && syncVal.isNotEmpty) {
+      web.window.history.replaceState(
+        null,
+        '',
+        web.window.location.pathname,
+      );
+      return 'sync=$syncVal';
+    }
+  } catch (_) {}
+  return null;
+}
+
 Future<void> shareRasbBytes({
   required String fileName,
   required String content,
@@ -35,7 +53,6 @@ Future<void> shareRasbBytes({
       ),
     );
   } catch (_) {
-    // Fallback to sharing the text if file sharing is blocked by the browser
     await SharePlus.instance.share(
       ShareParams(
         text: content,
@@ -49,7 +66,8 @@ Future<Map<String, String>?> pickRasbFileFromDevice() async {
   final completer = Completer<Map<String, String>?>();
   final input = web.HTMLInputElement()
     ..type = 'file'
-    ..accept = '.rasb,.json,application/json,application/octet-stream,text/plain,*/*';
+    ..accept =
+        '.rasb,.json,application/json,application/octet-stream,text/plain,*/*';
 
   input.onchange = ((web.Event _) {
     final files = input.files;

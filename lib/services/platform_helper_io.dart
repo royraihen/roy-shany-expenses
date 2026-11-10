@@ -7,6 +7,8 @@ Future<String?> loadWebStorageExpensesJson() async => null;
 
 Future<void> saveWebStorageExpensesJson(String jsonStr) async {}
 
+String? consumeInitialWebSyncParam() => null;
+
 Future<void> shareRasbBytes({
   required String fileName,
   required String content,

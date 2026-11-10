@@ -116,6 +116,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
+  Future<void> _triggerOneTapSync(BuildContext context) async {
+    final provider = context.read<ExpenseProvider>();
+    final added = await provider.syncWithCloudSilently();
+    if (!context.mounted) return;
+
+    final msg = added > 0
+        ? 'Synced $added new expense${added == 1 ? '' : 's'}!'
+        : 'Everything is synced and up to date!';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.green.shade700,
+      ),
+    );
+  }
+
   void _openPersonDetails(BuildContext context, String spenderName) {
     final now = context.read<ExpenseProvider>().now;
     Navigator.of(context).push(
@@ -157,12 +174,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
             title: const Text('Roy & Shany Expenses'),
             actions: [
               TextButton.icon(
-                onPressed: () => SyncDialog.show(context),
-                icon: const Icon(Icons.sync, size: 20),
+                onPressed: () => _triggerOneTapSync(context),
+                icon: const Icon(Icons.cloud_sync_outlined, size: 20),
                 label: const Text(
-                  'Sync',
+                  'Sync Now',
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
+              ),
+              IconButton(
+                tooltip: 'Manual .rasb / JSON Import',
+                icon: const Icon(Icons.file_open_outlined),
+                onPressed: () => SyncDialog.show(context),
               ),
               IconButton(
                 tooltip: 'All-Time History',
@@ -256,12 +278,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                           Colors.white.withValues(alpha: 0.18),
                                       foregroundColor: Colors.white,
                                     ),
-                                    onPressed: () => SyncDialog.show(context),
+                                    onPressed: () => _triggerOneTapSync(context),
                                     icon: const Icon(
-                                      Icons.download_outlined,
+                                      Icons.sync,
                                       size: 18,
                                     ),
-                                    label: const Text('Manual Import'),
+                                    label: const Text('Sync Now'),
                                   ),
                                 ),
                                 const SizedBox(width: 10),

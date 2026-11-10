@@ -69,7 +69,10 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     });
   }
 
-  Future<void> _saveAndShare() async {
+  Future<void> _saveExpense({
+    required bool openShareWindow,
+    bool shareAsRasbFile = false,
+  }) async {
     final isFormValid = _formKey.currentState?.validate() ?? false;
     final isCardSelected =
         _selectedCreditCard != null && _selectedCreditCard!.isNotEmpty;
@@ -99,15 +102,30 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         creditCardUsed: _selectedCreditCard!,
       );
 
-      // 1. Save to local sqflite database
+      // 1. Save locally and automatically sync in the background to the other phone
       final provider = context.read<ExpenseProvider>();
       await provider.addExpense(expense);
 
       if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Saved & auto-synced: ${expense.spenderName} spent ${AppFormatters.formatShekel(expense.amount)} on ${expense.reason}',
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.green.shade700,
+        ),
+      );
       Navigator.of(context).pop(expense);
 
-      // 2. Write the JSON into a .rasb (Roy and Shany Budget) file and open the native share window
-      await RasbFileService.shareSingleExpense(expense);
+      // 2. Optionally open the native share window for WhatsApp
+      if (openShareWindow) {
+        if (shareAsRasbFile) {
+          await RasbFileService.shareSingleExpense(expense);
+        } else {
+          await RasbFileService.shareOneTapWhatsAppSync(expense);
+        }
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -348,11 +366,13 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
               ),
               const SizedBox(height: 30),
 
-              // Save & Share button
+              // Primary Save & Auto-Sync button (0 extra steps needed!)
               SizedBox(
                 height: 54,
                 child: FilledButton.icon(
-                  onPressed: _isSaving ? null : _saveAndShare,
+                  onPressed: _isSaving
+                      ? null
+                      : () => _saveExpense(openShareWindow: false),
                   icon: _isSaving
                       ? const SizedBox(
                           width: 20,
@@ -362,12 +382,42 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                             color: Colors.white,
                           ),
                         )
-                      : const Icon(Icons.share),
+                      : const Icon(Icons.cloud_done_outlined),
                   label: const Text(
-                    'Save & Share .rasb File',
+                    'Save Expense (Auto-Syncs)',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                 ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _isSaving
+                          ? null
+                          : () => _saveExpense(
+                                openShareWindow: true,
+                                shareAsRasbFile: false,
+                              ),
+                      icon: const Icon(Icons.link, size: 18),
+                      label: const Text('Save & WhatsApp Link'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _isSaving
+                          ? null
+                          : () => _saveExpense(
+                                openShareWindow: true,
+                                shareAsRasbFile: true,
+                              ),
+                      icon: const Icon(Icons.attach_file, size: 18),
+                      label: const Text('Save & .rasb File'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

@@ -93,6 +93,9 @@ class MainActivity : FlutterActivity() {
 
     private fun readUriPayload(uri: Uri): Map<String, String>? {
         return try {
+            if ((uri.scheme == "https" || uri.scheme == "http") && uri.toString().contains("sync=")) {
+                return mapOf("fileName" to "1-Tap Sync Link", "content" to uri.toString())
+            }
             val fileName = resolveDisplayName(uri) ?: "expense.rasb"
             val inputStream = contentResolver.openInputStream(uri) ?: return null
             val content = inputStream.use { stream ->

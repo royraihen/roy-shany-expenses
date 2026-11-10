@@ -68,6 +68,27 @@ class Expense {
       throw const FormatException('Input is empty.');
     }
 
+    // Support 1-Tap Magic Sync Links (?sync=<base64url>) directly
+    if (trimmed.contains('sync=')) {
+      final idx = trimmed.indexOf('sync=');
+      if (idx != -1) {
+        final rawParam = trimmed
+            .substring(idx + 5)
+            .split(RegExp(r'[\s&#]'))
+            .first
+            .trim();
+        if (rawParam.isNotEmpty) {
+          try {
+            final normalized = base64Url.normalize(rawParam);
+            final decodedJson = utf8.decode(base64Url.decode(normalized));
+            return parseFlexibleJson(decodedJson);
+          } catch (_) {
+            // Fall through to normal JSON parsing if not base64url
+          }
+        }
+      }
+    }
+
     dynamic decoded;
     try {
       decoded = json.decode(trimmed);

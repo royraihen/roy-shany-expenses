@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../models/expense.dart';
+import '../services/auto_sync_service.dart';
 import '../services/database_helper.dart';
 
 class MonthSummary {
@@ -39,42 +41,131 @@ class ExpenseProvider extends ChangeNotifier {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
 
   List<Expense> _allExpenses = [];
+  final Set<String> _deletedIds = {};
   bool _isLoading = true;
+  bool _isSyncingCloud = false;
+  Timer? _autoSyncTimer;
+
+  ExpenseProvider() {
+    _autoSyncTimer = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => syncWithCloudSilently(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _autoSyncTimer?.cancel();
+    super.dispose();
+  }
 
   List<Expense> get allExpenses => List.unmodifiable(_allExpenses);
   bool get isLoading => _isLoading;
+  bool get isSyncingCloud => _isSyncingCloud;
 
   DateTime get now => DateTime.now();
 
-  /// Loads all expenses from SQLite and notifies listeners.
-  Future<void> loadExpenses() async {
-    _isLoading = true;
-    notifyListeners();
-
+  /// Loads all expenses from local storage and triggers automatic background cloud sync.
+  Future<void> loadExpenses({bool syncCloud = true}) async {
     try {
       _allExpenses = await _dbHelper.getAllExpenses();
     } finally {
       _isLoading = false;
       notifyListeners();
     }
+
+    if (syncCloud) {
+      unawaited(syncWithCloudSilently());
+    }
   }
 
-  /// Adds a new expense to the local SQLite database and refreshes state.
+  /// Automatically merges expenses between Roy's Android and Shany's iPhone in the background.
+  Future<int> syncWithCloudSilently() async {
+    if (_isSyncingCloud) return 0;
+    _isSyncingCloud = true;
+
+    try {
+      final cloudState = await AutoSyncService.pullFromCloud();
+      if (cloudState == null) return 0;
+
+      int newlyImported = 0;
+      bool localChanged = false;
+
+      // Apply any cloud deletions locally
+      for (final delId in cloudState.deletedIds) {
+        _deletedIds.add(delId);
+        if (await _dbHelper.expenseExists(delId)) {
+          await _dbHelper.deleteExpense(delId);
+          localChanged = true;
+        }
+      }
+
+      // Import any cloud expenses that we don't have locally yet
+      for (final remoteExpense in cloudState.expenses) {
+        if (_deletedIds.contains(remoteExpense.id)) continue;
+        final exists = await _dbHelper.expenseExists(remoteExpense.id);
+        if (!exists) {
+          await _dbHelper.insertExpense(remoteExpense);
+          newlyImported++;
+          localChanged = true;
+        }
+      }
+
+      if (localChanged) {
+        _allExpenses = await _dbHelper.getAllExpenses();
+        notifyListeners();
+      }
+
+      // Check if we have local expenses that aren't in the cloud yet; if so, push our state
+      final remoteIds = cloudState.expenses.map((e) => e.id).toSet();
+      final hasLocalUnpushed = _allExpenses.any(
+        (local) => !remoteIds.contains(local.id),
+      );
+
+      if (hasLocalUnpushed) {
+        await AutoSyncService.pushExpenses(
+          expenses: _allExpenses,
+          deletedIds: _deletedIds,
+        );
+      }
+
+      return newlyImported;
+    } finally {
+      _isSyncingCloud = false;
+    }
+  }
+
+  /// Adds a new expense to local storage and automatically pushes to the cloud sync channel.
   Future<bool> addExpense(Expense expense) async {
     final inserted = await _dbHelper.insertExpense(expense);
     if (inserted) {
-      await loadExpenses();
+      _allExpenses = await _dbHelper.getAllExpenses();
+      notifyListeners();
+      unawaited(
+        AutoSyncService.pushExpenses(
+          expenses: _allExpenses,
+          deletedIds: _deletedIds,
+        ),
+      );
     }
     return inserted;
   }
 
-  /// Deletes an expense by ID and refreshes state.
+  /// Deletes an expense by ID locally and broadcasts the deletion to the cloud sync channel.
   Future<void> deleteExpense(String id) async {
+    _deletedIds.add(id);
     await _dbHelper.deleteExpense(id);
-    await loadExpenses();
+    _allExpenses = await _dbHelper.getAllExpenses();
+    notifyListeners();
+    unawaited(
+      AutoSyncService.pushExpenses(
+        expenses: _allExpenses,
+        deletedIds: _deletedIds,
+      ),
+    );
   }
 
-  /// Imports one or multiple expenses from a JSON / .rasb string (checking for existing IDs).
+  /// Imports one or multiple expenses from a JSON / .rasb / ?sync= string (checking for existing IDs).
   Future<SyncResult> importFromJsonString(String rawJson) async {
     final parsedExpenses = Expense.parseFlexibleJson(rawJson);
     int importedCount = 0;
@@ -93,7 +184,14 @@ class ExpenseProvider extends ChangeNotifier {
     }
 
     if (importedCount > 0) {
-      await loadExpenses();
+      _allExpenses = await _dbHelper.getAllExpenses();
+      notifyListeners();
+      unawaited(
+        AutoSyncService.pushExpenses(
+          expenses: _allExpenses,
+          deletedIds: _deletedIds,
+        ),
+      );
     }
 
     return SyncResult(

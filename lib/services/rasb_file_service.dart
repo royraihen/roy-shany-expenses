@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import '../models/expense.dart';
 import '../utils/formatters.dart';
+import 'auto_sync_service.dart';
 import 'platform_helper.dart';
 
 class RasbPayload {
@@ -21,12 +23,23 @@ class RasbFileService {
     'com.royandshany.expense_tracker/rasb',
   );
 
-  /// Initializes listener for `.rasb` files opened while the app is running
-  /// and fetches any `.rasb` file that launched the app.
+  /// Initializes listener for `.rasb` files or `?sync=` links opened while the app is running
+  /// and fetches any `.rasb` file or `?sync=` link that launched the app.
   static Future<void> initialize({
     required Future<void> Function(RasbPayload payload) onRasbOpened,
   }) async {
-    if (kIsWeb) return;
+    if (kIsWeb) {
+      final webSyncParam = consumeInitialWebSyncParam();
+      if (webSyncParam != null && webSyncParam.isNotEmpty) {
+        await onRasbOpened(
+          RasbPayload(
+            fileName: '1-Tap WhatsApp Sync Link',
+            content: webSyncParam,
+          ),
+        );
+      }
+      return;
+    }
 
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'onRasbFileOpened') {
@@ -61,6 +74,23 @@ class RasbFileService {
     } catch (_) {
       // Ignore initialization errors
     }
+  }
+
+  /// Shares a 1-tap WhatsApp sync message + link that works on both iPhone and Android with 1 click.
+  static Future<void> shareOneTapWhatsAppSync(Expense expense) async {
+    final link = AutoSyncService.buildOneTapSyncUrl([expense]);
+    final formattedAmount = AppFormatters.formatShekel(expense.amount);
+    final text =
+        '💸 ${expense.spenderName} spent $formattedAmount on ${expense.reason} (${expense.creditCardUsed})\n'
+        'Tap to open & sync:\n$link';
+
+    await SharePlus.instance.share(
+      ShareParams(
+        text: text,
+        subject:
+            '${expense.spenderName}: $formattedAmount - ${expense.reason}',
+      ),
+    );
   }
 
   /// Creates a `.rasb` (Roy and Shany Budget) file for a single [Expense]
