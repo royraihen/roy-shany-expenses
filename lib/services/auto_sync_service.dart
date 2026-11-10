@@ -5,10 +5,12 @@ import '../models/expense.dart';
 class CloudSyncPayload {
   final List<Expense> expenses;
   final Set<String> deletedIds;
+  final int? lastClearAllEpochMs;
 
   const CloudSyncPayload({
     required this.expenses,
     required this.deletedIds,
+    this.lastClearAllEpochMs,
   });
 }
 
@@ -59,6 +61,28 @@ class AutoSyncService {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Broadcasts a "Clear All" command so both Android and iPhone wipe all existing expenses.
+  static Future<int> pushClearAll({
+    required Iterable<String> currentIdsToWipe,
+  }) async {
+    final nowEpochMs = DateTime.now().millisecondsSinceEpoch;
+    try {
+      final body = json.encode({
+        'format': 'rasb_clear_all',
+        'clearedAtEpochMs': nowEpochMs,
+        'deletedIds': currentIdsToWipe.toList(),
+      });
+      await http
+          .post(
+            Uri.parse(_ntfyBaseUrl),
+            headers: {'Content-Type': 'application/json'},
+            body: body,
+          )
+          .timeout(const Duration(seconds: 8));
+    } catch (_) {}
+    return nowEpochMs;
   }
 
   /// Pushes expenses and/or deleted IDs in compact chunks (<= 8 expenses per message)
@@ -123,6 +147,7 @@ class AutoSyncService {
 
       final Map<String, Expense> mergedExpenses = {};
       final Set<String> deletedIds = {};
+      int? lastClearAllEpochMs;
 
       final lines = const LineSplitter().convert(rawText);
       for (final line in lines) {
@@ -135,6 +160,23 @@ class AutoSyncService {
 
           final decodedMsg = json.decode(msgStr);
           if (decodedMsg is Map<String, dynamic>) {
+            if (decodedMsg['format'] == 'rasb_clear_all') {
+              deletedIds.addAll(mergedExpenses.keys);
+              if (decodedMsg['deletedIds'] is List) {
+                for (final id in (decodedMsg['deletedIds'] as List)) {
+                  deletedIds.add(id.toString());
+                }
+              }
+              mergedExpenses.clear();
+              final rawEpoch = decodedMsg['clearedAtEpochMs'];
+              if (rawEpoch is int) {
+                lastClearAllEpochMs = rawEpoch;
+              } else if (envelope['time'] is int) {
+                lastClearAllEpochMs = (envelope['time'] as int) * 1000;
+              }
+              continue;
+            }
+
             if (decodedMsg['deletedIds'] is List) {
               for (final id in (decodedMsg['deletedIds'] as List)) {
                 deletedIds.add(id.toString());
@@ -165,6 +207,7 @@ class AutoSyncService {
       return CloudSyncPayload(
         expenses: mergedExpenses.values.toList(),
         deletedIds: deletedIds,
+        lastClearAllEpochMs: lastClearAllEpochMs,
       );
     } catch (_) {
       return null;

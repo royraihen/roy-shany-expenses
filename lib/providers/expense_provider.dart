@@ -42,6 +42,7 @@ class ExpenseProvider extends ChangeNotifier {
 
   List<Expense> _allExpenses = [];
   final Set<String> _deletedIds = {};
+  int _lastAppliedClearAllEpochMs = 0;
   bool _isLoading = true;
   bool _isSyncingCloud = false;
   Timer? _autoSyncTimer;
@@ -90,6 +91,16 @@ class ExpenseProvider extends ChangeNotifier {
 
       int newlyImported = 0;
       bool localChanged = false;
+
+      // If a Clear-All command was triggered more recently than our last applied clear-all, wipe local expenses
+      if (cloudState.lastClearAllEpochMs != null &&
+          cloudState.lastClearAllEpochMs! > _lastAppliedClearAllEpochMs) {
+        _lastAppliedClearAllEpochMs = cloudState.lastClearAllEpochMs!;
+        if (_allExpenses.isNotEmpty) {
+          await _dbHelper.deleteAllExpenses();
+          localChanged = true;
+        }
+      }
 
       // Apply any cloud deletions locally
       for (final delId in cloudState.deletedIds) {
@@ -164,6 +175,20 @@ class ExpenseProvider extends ChangeNotifier {
         deletedIds: {id},
       ),
     );
+  }
+
+  /// Wipes all expenses on this device AND broadcasts a Clear-All event so the other phone wipes them too.
+  Future<void> clearAllExpensesFromBothSides() async {
+    final idsToWipe = _allExpenses.map((e) => e.id).toSet();
+    _deletedIds.addAll(idsToWipe);
+    await _dbHelper.deleteAllExpenses();
+    _allExpenses = [];
+    notifyListeners();
+
+    final epochMs = await AutoSyncService.pushClearAll(
+      currentIdsToWipe: _deletedIds,
+    );
+    _lastAppliedClearAllEpochMs = epochMs;
   }
 
   /// Imports one or multiple expenses from a JSON / .rasb / ?sync= string (checking for existing IDs).

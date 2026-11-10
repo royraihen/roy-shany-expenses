@@ -195,4 +195,14 @@ class DatabaseHelper {
     final db = await database;
     await db.delete('expenses', where: 'id = ?', whereArgs: [id]);
   }
+
+  /// Deletes all expenses from the local database.
+  Future<void> deleteAllExpenses() async {
+    if (kIsWeb) {
+      await _saveWebExpenses([]);
+      return;
+    }
+    final db = await database;
+    await db.delete('expenses');
+  }
 }

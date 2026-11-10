@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/expense.dart';
@@ -133,6 +134,49 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  Future<void> _confirmAndClearAllBothSides(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.delete_forever, color: Colors.red),
+            SizedBox(width: 8),
+            Expanded(child: Text('Clear All (Both Phones)?')),
+          ],
+        ),
+        content: const Text(
+          'This will permanently remove ALL expenses from both your Android phone and Shany\'s iPhone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete All on Both'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      await context.read<ExpenseProvider>().clearAllExpensesFromBothSides();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Cleared all expenses from both phones!',
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+  }
+
   void _openPersonDetails(BuildContext context, String spenderName) {
     final now = context.read<ExpenseProvider>().now;
     Navigator.of(context).push(
@@ -195,6 +239,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   );
                 },
               ),
+              if (!kIsWeb)
+                IconButton(
+                  tooltip: 'Clear All Expenses (Both Phones)',
+                  icon: const Icon(
+                    Icons.delete_forever_outlined,
+                    color: Colors.redAccent,
+                  ),
+                  onPressed: () => _confirmAndClearAllBothSides(context),
+                ),
             ],
           ),
           body: provider.isLoading
