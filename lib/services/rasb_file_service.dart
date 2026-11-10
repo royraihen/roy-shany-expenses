@@ -1,11 +1,9 @@
 import 'dart:convert';
-import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 import '../models/expense.dart';
 import '../utils/formatters.dart';
+import 'platform_helper.dart';
 
 class RasbPayload {
   final String fileName;
@@ -28,6 +26,8 @@ class RasbFileService {
   static Future<void> initialize({
     required Future<void> Function(RasbPayload payload) onRasbOpened,
   }) async {
+    if (kIsWeb) return;
+
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'onRasbFileOpened') {
         final args = call.arguments;
@@ -57,7 +57,7 @@ class RasbFileService {
         }
       }
     } on MissingPluginException {
-      // Ignore on platforms where the native channel is not registered (e.g. unit tests)
+      // Ignore on platforms where the native channel is not registered
     } catch (_) {
       // Ignore initialization errors
     }
@@ -66,15 +66,14 @@ class RasbFileService {
   /// Creates a `.rasb` (Roy and Shany Budget) file for a single [Expense]
   /// and opens the native share sheet so it can be sent via WhatsApp, etc.
   static Future<void> shareSingleExpense(Expense expense) async {
-    final tempDir = await getTemporaryDirectory();
     final safeReason = _sanitizeFileName(expense.reason);
     final safeSpender = _sanitizeFileName(expense.spenderName);
     final amountStr = expense.amount == expense.amount.roundToDouble()
         ? expense.amount.toInt().toString()
         : expense.amount.toStringAsFixed(2).replaceAll('.', '_');
 
-    final fileName = '${safeSpender}_${amountStr}ILS_$safeReason.$fileExtension';
-    final filePath = p.join(tempDir.path, fileName);
+    final fileName =
+        '${safeSpender}_${amountStr}ILS_$safeReason.$fileExtension';
 
     final payloadMap = {
       'format': 'rasb',
@@ -84,23 +83,14 @@ class RasbFileService {
       'expenses': [expense.toMap()],
     };
 
-    final file = File(filePath);
-    await file.writeAsString(
-      const JsonEncoder.withIndent('  ').convert(payloadMap),
-      flush: true,
-    );
+    final content = const JsonEncoder.withIndent('  ').convert(payloadMap);
+    final subject =
+        '${expense.spenderName}: ${AppFormatters.formatShekel(expense.amount)} - ${expense.reason}';
 
-    await SharePlus.instance.share(
-      ShareParams(
-        files: [
-          XFile(
-            file.path,
-            name: fileName,
-          ),
-        ],
-        subject:
-            '${expense.spenderName}: ${AppFormatters.formatShekel(expense.amount)} - ${expense.reason}',
-      ),
+    await shareRasbBytes(
+      fileName: fileName,
+      content: content,
+      subject: subject,
     );
   }
 
@@ -112,10 +102,8 @@ class RasbFileService {
   }) async {
     if (expenses.isEmpty) return;
 
-    final tempDir = await getTemporaryDirectory();
     final safeLabel = _sanitizeFileName(label);
     final fileName = 'RoyShany_${safeLabel}_Sync.$fileExtension';
-    final filePath = p.join(tempDir.path, fileName);
 
     final payloadMap = {
       'format': 'rasb',
@@ -125,22 +113,23 @@ class RasbFileService {
       'expenses': expenses.map((e) => e.toMap()).toList(),
     };
 
-    final file = File(filePath);
-    await file.writeAsString(
-      const JsonEncoder.withIndent('  ').convert(payloadMap),
-      flush: true,
+    final content = const JsonEncoder.withIndent('  ').convert(payloadMap);
+    await shareRasbBytes(
+      fileName: fileName,
+      content: content,
+      subject: 'Roy & Shany Budget Sync ($label)',
     );
+  }
 
-    await SharePlus.instance.share(
-      ShareParams(
-        files: [
-          XFile(
-            file.path,
-            name: fileName,
-          ),
-        ],
-        subject: 'Roy & Shany Budget Sync ($label)',
-      ),
+  /// Allows picking a `.rasb` file directly on Web / iPhone PWA.
+  static Future<RasbPayload?> pickRasbFile() async {
+    final map = await pickRasbFileFromDevice();
+    if (map == null) return null;
+    final content = map['content'] ?? '';
+    if (content.trim().isEmpty) return null;
+    return RasbPayload(
+      fileName: map['fileName'] ?? 'expense.rasb',
+      content: content,
     );
   }
 

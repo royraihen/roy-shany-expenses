@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/expense_provider.dart';
+import '../services/rasb_file_service.dart';
 
 class SyncDialog extends StatefulWidget {
   const SyncDialog({super.key});
@@ -38,11 +40,23 @@ class _SyncDialogState extends State<SyncDialog> {
     }
   }
 
+  Future<void> _pickRasbFile() async {
+    final payload = await RasbFileService.pickRasbFile();
+    if (payload != null && mounted) {
+      setState(() {
+        _jsonController.text = payload.content.trim();
+        _errorMessage = null;
+      });
+      await _handleImport();
+    }
+  }
+
   Future<void> _handleImport() async {
     final raw = _jsonController.text.trim();
     if (raw.isEmpty) {
       setState(() {
-        _errorMessage = 'Please paste the JSON string received from Roy or Shany.';
+        _errorMessage =
+            'Please select a .rasb file or paste the JSON string received from Roy or Shany.';
       });
       return;
     }
@@ -81,11 +95,12 @@ class _SyncDialogState extends State<SyncDialog> {
       );
     } on FormatException catch (e) {
       setState(() {
-        _errorMessage = 'Invalid JSON format: ${e.message}';
+        _errorMessage = 'Invalid .rasb / JSON format: ${e.message}';
       });
     } catch (e) {
       setState(() {
-        _errorMessage = 'Could not import JSON. Please check the pasted text.';
+        _errorMessage =
+            'Could not import .rasb / JSON. Please check the file or text.';
       });
     } finally {
       if (mounted) {
@@ -103,7 +118,7 @@ class _SyncDialogState extends State<SyncDialog> {
         children: [
           Icon(Icons.sync, color: Color(0xFF0F766E)),
           SizedBox(width: 10),
-          Expanded(child: Text('Sync / Import JSON')),
+          Expanded(child: Text('Sync / Import (.rasb)')),
         ],
       ),
       content: SingleChildScrollView(
@@ -111,11 +126,25 @@ class _SyncDialogState extends State<SyncDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'Paste the JSON string shared by Roy or Shany via WhatsApp/SMS. Duplicate expenses are automatically skipped by ID.',
-              style: TextStyle(fontSize: 13.5, color: Colors.black87),
-            ),
-            const SizedBox(height: 12),
+            if (kIsWeb) ...[
+              FilledButton.icon(
+                onPressed: _isSubmitting ? null : _pickRasbFile,
+                icon: const Icon(Icons.upload_file),
+                label: const Text('Select .rasb File from Phone'),
+              ),
+              const SizedBox(height: 12),
+              const Center(
+                child: Text(
+                  '— OR paste JSON below —',
+                  style: TextStyle(fontSize: 12, color: Colors.black54),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ] else
+              const Text(
+                'Tip: Tapping a .rasb file in WhatsApp opens & imports it automatically! You can also paste raw JSON below:',
+                style: TextStyle(fontSize: 13, color: Colors.black87),
+              ),
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
@@ -126,8 +155,8 @@ class _SyncDialogState extends State<SyncDialog> {
             ),
             TextField(
               controller: _jsonController,
-              maxLines: 6,
-              minLines: 4,
+              maxLines: 5,
+              minLines: 3,
               decoration: InputDecoration(
                 hintText:
                     '{"id":"...","spenderName":"Roy","amount":120.0,"timestamp":"...","reason":"Groceries","creditCardUsed":"Roy\'s Card"}',

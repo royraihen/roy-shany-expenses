@@ -1,6 +1,9 @@
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/expense.dart';
+import 'platform_helper.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._internal();
@@ -42,8 +45,34 @@ class DatabaseHelper {
     );
   }
 
+  Future<List<Expense>> _getWebExpenses() async {
+    final raw = await loadWebStorageExpensesJson();
+    if (raw == null || raw.trim().isEmpty) return [];
+    try {
+      final decoded = json.decode(raw) as List<dynamic>;
+      final list = decoded
+          .whereType<Map<String, dynamic>>()
+          .map(Expense.fromMap)
+          .toList();
+      list.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      return list;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> _saveWebExpenses(List<Expense> expenses) async {
+    expenses.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    final encoded = json.encode(expenses.map((e) => e.toMap()).toList());
+    await saveWebStorageExpensesJson(encoded);
+  }
+
   /// Checks if an expense with [id] already exists in the local database.
   Future<bool> expenseExists(String id) async {
+    if (kIsWeb) {
+      final list = await _getWebExpenses();
+      return list.any((e) => e.id == id);
+    }
     final db = await database;
     final result = await db.query(
       'expenses',
@@ -61,6 +90,12 @@ class DatabaseHelper {
     if (await expenseExists(expense.id)) {
       return false;
     }
+    if (kIsWeb) {
+      final list = await _getWebExpenses();
+      list.add(expense);
+      await _saveWebExpenses(list);
+      return true;
+    }
     final db = await database;
     await db.insert(
       'expenses',
@@ -72,6 +107,12 @@ class DatabaseHelper {
 
   /// Queries all expenses for a specific [year] and [month] (1-12), ordered newest first.
   Future<List<Expense>> getExpensesByMonth(int year, int month) async {
+    if (kIsWeb) {
+      final list = await _getWebExpenses();
+      return list
+          .where((e) => e.timestamp.year == year && e.timestamp.month == month)
+          .toList();
+    }
     final db = await database;
     final startOfMonth = DateTime(year, month, 1).toIso8601String();
     final startOfNextMonth = DateTime(year, month + 1, 1).toIso8601String();
@@ -91,6 +132,17 @@ class DatabaseHelper {
     int year,
     int month,
   ) async {
+    if (kIsWeb) {
+      final list = await _getWebExpenses();
+      return list
+          .where(
+            (e) =>
+                e.spenderName.toLowerCase() == spenderName.toLowerCase() &&
+                e.timestamp.year == year &&
+                e.timestamp.month == month,
+          )
+          .toList();
+    }
     final db = await database;
     final startOfMonth = DateTime(year, month, 1).toIso8601String();
     final startOfNextMonth = DateTime(year, month + 1, 1).toIso8601String();
@@ -106,6 +158,12 @@ class DatabaseHelper {
 
   /// Queries all expenses for a specific [spenderName] across all time.
   Future<List<Expense>> getExpensesByPerson(String spenderName) async {
+    if (kIsWeb) {
+      final list = await _getWebExpenses();
+      return list
+          .where((e) => e.spenderName.toLowerCase() == spenderName.toLowerCase())
+          .toList();
+    }
     final db = await database;
     final maps = await db.query(
       'expenses',
@@ -118,6 +176,9 @@ class DatabaseHelper {
 
   /// Queries all expenses across all time, ordered newest first.
   Future<List<Expense>> getAllExpenses() async {
+    if (kIsWeb) {
+      return _getWebExpenses();
+    }
     final db = await database;
     final maps = await db.query('expenses', orderBy: 'timestamp DESC');
     return maps.map(Expense.fromMap).toList();
@@ -125,6 +186,12 @@ class DatabaseHelper {
 
   /// Deletes an expense by ID.
   Future<void> deleteExpense(String id) async {
+    if (kIsWeb) {
+      final list = await _getWebExpenses();
+      list.removeWhere((e) => e.id == id);
+      await _saveWebExpenses(list);
+      return;
+    }
     final db = await database;
     await db.delete('expenses', where: 'id = ?', whereArgs: [id]);
   }
