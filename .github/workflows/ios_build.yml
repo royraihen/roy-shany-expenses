@@ -10,10 +10,17 @@ permissions:
   pages: write
   id-token: write
 
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
 jobs:
   deploy_iphone_pwa:
     name: Build & Publish iPhone Home-Screen App (GitHub Pages)
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -36,6 +43,21 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./build/web
+
+      - name: Configure GitHub Pages
+        continue-on-error: true
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages artifact
+        continue-on-error: true
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
 
   build_ios_ipa:
     name: Build iOS IPA Artifact (macOS)
