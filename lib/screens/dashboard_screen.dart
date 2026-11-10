@@ -7,7 +7,7 @@ import '../providers/expense_provider.dart';
 import '../services/rasb_file_service.dart';
 import '../utils/formatters.dart';
 import '../widgets/expense_tile.dart';
-import '../widgets/sync_dialog.dart';
+import '../widgets/pairing_dialog.dart';
 import 'add_expense_screen.dart';
 import 'history_screen.dart';
 import 'person_expenses_screen.dart';
@@ -20,6 +20,8 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  bool _promptedPairing = false;
+
   @override
   void initState() {
     super.initState();
@@ -119,6 +121,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _triggerOneTapSync(BuildContext context) async {
     final provider = context.read<ExpenseProvider>();
+    if (!provider.isPaired) {
+      await PairingDialog.show(context);
+      return;
+    }
     final added = await provider.syncWithCloudSilently();
     if (!context.mounted) return;
 
@@ -194,6 +200,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     return Consumer<ExpenseProvider>(
       builder: (context, provider, _) {
+        if (!provider.isLoading && !provider.isPaired && !_promptedPairing) {
+          _promptedPairing = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              PairingDialog.show(context, barrierDismissible: false);
+            }
+          });
+        }
+
         final now = provider.now;
         final currentMonthTitle = AppFormatters.formatMonthYear(now);
         final totalSpend = provider.currentMonthTotal;
@@ -226,9 +241,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
               IconButton(
-                tooltip: 'Manual .rasb / JSON Import',
-                icon: const Icon(Icons.file_open_outlined),
-                onPressed: () => SyncDialog.show(context),
+                tooltip: 'Pairing Password (P2P Encryption)',
+                icon: Icon(
+                  provider.isPaired ? Icons.vpn_key : Icons.vpn_key_off_outlined,
+                  color: provider.isPaired
+                      ? const Color(0xFF0F766E)
+                      : Colors.orange.shade700,
+                ),
+                onPressed: () => PairingDialog.show(context),
               ),
               IconButton(
                 tooltip: 'All-Time History',

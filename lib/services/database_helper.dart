@@ -41,6 +41,20 @@ class DatabaseHelper {
         await db.execute(
           'CREATE INDEX idx_expenses_spender ON expenses(spenderName)',
         );
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+          )
+        ''');
+      },
+      onOpen: (db) async {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+          )
+        ''');
       },
     );
   }
@@ -204,5 +218,39 @@ class DatabaseHelper {
     }
     final db = await database;
     await db.delete('expenses');
+  }
+
+  /// Retrieves the stored one-time pairing password (if configured).
+  Future<String?> getPairingPassword() async {
+    if (kIsWeb) {
+      final pwd = await loadWebPairingPassword();
+      return (pwd == null || pwd.trim().isEmpty) ? null : pwd.trim();
+    }
+    final db = await database;
+    final rows = await db.query(
+      'app_settings',
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: ['pairing_password'],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    final val = rows.first['value']?.toString().trim();
+    return (val == null || val.isEmpty) ? null : val;
+  }
+
+  /// Saves the one-time pairing password locally.
+  Future<void> setPairingPassword(String password) async {
+    final trimmed = password.trim();
+    if (kIsWeb) {
+      await saveWebPairingPassword(trimmed);
+      return;
+    }
+    final db = await database;
+    await db.insert(
+      'app_settings',
+      {'key': 'pairing_password', 'value': trimmed},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 }

@@ -7,6 +7,10 @@ Future<String?> loadWebStorageExpensesJson() async => null;
 
 Future<void> saveWebStorageExpensesJson(String jsonStr) async {}
 
+Future<String?> loadWebPairingPassword() async => null;
+
+Future<void> saveWebPairingPassword(String password) async {}
+
 String? consumeInitialWebSyncParam() => null;
 
 Future<void> shareRasbBytes({

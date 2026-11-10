@@ -43,6 +43,7 @@ class ExpenseProvider extends ChangeNotifier {
   List<Expense> _allExpenses = [];
   final Set<String> _deletedIds = {};
   int _lastAppliedClearAllEpochMs = 0;
+  String? _pairingPassword;
   bool _isLoading = true;
   bool _isSyncingCloud = false;
   Timer? _autoSyncTimer;
@@ -63,30 +64,47 @@ class ExpenseProvider extends ChangeNotifier {
   List<Expense> get allExpenses => List.unmodifiable(_allExpenses);
   bool get isLoading => _isLoading;
   bool get isSyncingCloud => _isSyncingCloud;
+  String? get pairingPassword => _pairingPassword;
+  bool get isPaired =>
+      _pairingPassword != null && _pairingPassword!.trim().isNotEmpty;
 
   DateTime get now => DateTime.now();
 
-  /// Loads all expenses from local storage and triggers automatic background cloud sync.
+  /// Loads all expenses and the one-time pairing password from local storage,
+  /// then triggers automatic background cloud sync if paired.
   Future<void> loadExpenses({bool syncCloud = true}) async {
     try {
+      _pairingPassword = await _dbHelper.getPairingPassword();
       _allExpenses = await _dbHelper.getAllExpenses();
     } finally {
       _isLoading = false;
       notifyListeners();
     }
 
-    if (syncCloud) {
+    if (syncCloud && isPaired) {
       unawaited(syncWithCloudSilently());
     }
   }
 
-  /// Automatically merges expenses between Roy's Android and Shany's iPhone in the background.
+  /// Sets and persists the one-time secret pairing password, then immediately syncs.
+  Future<int> setPairingPassword(String password) async {
+    final cleaned = password.trim();
+    await _dbHelper.setPairingPassword(cleaned);
+    _pairingPassword = cleaned;
+    notifyListeners();
+    return syncWithCloudSilently();
+  }
+
+  /// Automatically merges expenses between Roy's Android and Shany's iPhone in the background
+  /// using the encrypted channel derived from [_pairingPassword].
   Future<int> syncWithCloudSilently() async {
-    if (_isSyncingCloud) return 0;
+    if (!isPaired || _isSyncingCloud) return 0;
     _isSyncingCloud = true;
 
     try {
-      final cloudState = await AutoSyncService.pullFromCloud();
+      final cloudState = await AutoSyncService.pullFromCloud(
+        pairingPassword: _pairingPassword,
+      );
       if (cloudState == null) return 0;
 
       int newlyImported = 0;
@@ -136,6 +154,7 @@ class ExpenseProvider extends ChangeNotifier {
 
       if (unpushedExpenses.isNotEmpty || unpushedDeletions.isNotEmpty) {
         await AutoSyncService.pushExpenses(
+          pairingPassword: _pairingPassword,
           expenses: unpushedExpenses,
           deletedIds: unpushedDeletions,
         );
@@ -147,7 +166,7 @@ class ExpenseProvider extends ChangeNotifier {
     }
   }
 
-  /// Adds a new expense to local storage and automatically pushes to the cloud sync channel.
+  /// Adds a new expense to local storage and automatically pushes to the encrypted cloud sync channel.
   Future<bool> addExpense(Expense expense) async {
     final inserted = await _dbHelper.insertExpense(expense);
     if (inserted) {
@@ -155,6 +174,7 @@ class ExpenseProvider extends ChangeNotifier {
       notifyListeners();
       unawaited(
         AutoSyncService.pushExpenses(
+          pairingPassword: _pairingPassword,
           expenses: [expense],
           deletedIds: const {},
         ),
@@ -163,7 +183,7 @@ class ExpenseProvider extends ChangeNotifier {
     return inserted;
   }
 
-  /// Deletes an expense by ID locally and broadcasts the deletion to the cloud sync channel.
+  /// Deletes an expense by ID locally and broadcasts the deletion to the encrypted cloud sync channel.
   Future<void> deleteExpense(String id) async {
     _deletedIds.add(id);
     await _dbHelper.deleteExpense(id);
@@ -171,13 +191,14 @@ class ExpenseProvider extends ChangeNotifier {
     notifyListeners();
     unawaited(
       AutoSyncService.pushExpenses(
+        pairingPassword: _pairingPassword,
         expenses: const [],
         deletedIds: {id},
       ),
     );
   }
 
-  /// Wipes all expenses on this device AND broadcasts a Clear-All event so the other phone wipes them too.
+  /// Wipes all expenses on this device AND broadcasts an encrypted Clear-All event so the paired phone wipes them too.
   Future<void> clearAllExpensesFromBothSides() async {
     final idsToWipe = _allExpenses.map((e) => e.id).toSet();
     _deletedIds.addAll(idsToWipe);
@@ -186,6 +207,7 @@ class ExpenseProvider extends ChangeNotifier {
     notifyListeners();
 
     final epochMs = await AutoSyncService.pushClearAll(
+      pairingPassword: _pairingPassword,
       currentIdsToWipe: _deletedIds,
     );
     _lastAppliedClearAllEpochMs = epochMs;
@@ -214,6 +236,7 @@ class ExpenseProvider extends ChangeNotifier {
       notifyListeners();
       unawaited(
         AutoSyncService.pushExpenses(
+          pairingPassword: _pairingPassword,
           expenses: newlyImported,
           deletedIds: const {},
         ),

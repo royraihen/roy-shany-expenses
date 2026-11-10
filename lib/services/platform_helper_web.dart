@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:web/web.dart' as web;
 
 const String _storageKey = 'roy_shany_expenses_v1';
+const String _pairingKey = 'roy_shany_pairing_password_v1';
 
 Future<String?> loadWebStorageExpensesJson() async {
   return web.window.localStorage.getItem(_storageKey);
@@ -12,6 +13,14 @@ Future<String?> loadWebStorageExpensesJson() async {
 
 Future<void> saveWebStorageExpensesJson(String jsonStr) async {
   web.window.localStorage.setItem(_storageKey, jsonStr);
+}
+
+Future<String?> loadWebPairingPassword() async {
+  return web.window.localStorage.getItem(_pairingKey);
+}
+
+Future<void> saveWebPairingPassword(String password) async {
+  web.window.localStorage.setItem(_pairingKey, password);
 }
 
 String? consumeInitialWebSyncParam() {
