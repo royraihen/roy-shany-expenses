@@ -61,26 +61,48 @@ class AutoSyncService {
     }
   }
 
-  /// Pushes the current state (expenses + deleted IDs) to the background sync channel.
+  /// Pushes expenses and/or deleted IDs in compact chunks (<= 8 expenses per message)
+  /// so messages always stay well under ntfy.sh's 4KB inline JSON limit.
   static Future<void> pushExpenses({
     required List<Expense> expenses,
     required Set<String> deletedIds,
   }) async {
     try {
-      final body = json.encode({
-        'format': 'rasb_sync',
-        'timestamp': DateTime.now().toIso8601String(),
-        'expenses': expenses.map((e) => e.toMap()).toList(),
-        'deletedIds': deletedIds.toList(),
-      });
+      if (expenses.isEmpty && deletedIds.isNotEmpty) {
+        final body = json.encode({
+          'format': 'rasb_sync',
+          'timestamp': DateTime.now().toIso8601String(),
+          'expenses': const [],
+          'deletedIds': deletedIds.toList(),
+        });
+        await http
+            .post(
+              Uri.parse(_ntfyBaseUrl),
+              headers: {'Content-Type': 'application/json'},
+              body: body,
+            )
+            .timeout(const Duration(seconds: 8));
+        return;
+      }
 
-      await http
-          .post(
-            Uri.parse(_ntfyBaseUrl),
-            headers: {'Content-Type': 'application/json'},
-            body: body,
-          )
-          .timeout(const Duration(seconds: 8));
+      const int chunkSize = 8;
+      for (int i = 0; i < expenses.length; i += chunkSize) {
+        final chunk = expenses.skip(i).take(chunkSize).toList();
+        final body = json.encode({
+          'format': 'rasb_sync',
+          'timestamp': DateTime.now().toIso8601String(),
+          'expenses': chunk.map((e) => e.toMap()).toList(),
+          'deletedIds': i == 0 ? deletedIds.toList() : const [],
+        });
+
+        await http
+            .post(
+              Uri.parse(_ntfyBaseUrl),
+              headers: {'Content-Type': 'application/json'},
+              body: body,
+            )
+            .timeout(const Duration(seconds: 8));
+      }
     } catch (_) {
       // Offline or network timeout; local DB still holds all data and will sync next time.
     }

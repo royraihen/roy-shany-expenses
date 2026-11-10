@@ -116,16 +116,17 @@ class ExpenseProvider extends ChangeNotifier {
         notifyListeners();
       }
 
-      // Check if we have local expenses that aren't in the cloud yet; if so, push our state
+      // Check if we have local expenses that aren't in the cloud yet; if so, push only the missing ones
       final remoteIds = cloudState.expenses.map((e) => e.id).toSet();
-      final hasLocalUnpushed = _allExpenses.any(
-        (local) => !remoteIds.contains(local.id),
-      );
+      final unpushedExpenses = _allExpenses
+          .where((local) => !remoteIds.contains(local.id))
+          .toList();
+      final unpushedDeletions = _deletedIds.difference(cloudState.deletedIds);
 
-      if (hasLocalUnpushed) {
+      if (unpushedExpenses.isNotEmpty || unpushedDeletions.isNotEmpty) {
         await AutoSyncService.pushExpenses(
-          expenses: _allExpenses,
-          deletedIds: _deletedIds,
+          expenses: unpushedExpenses,
+          deletedIds: unpushedDeletions,
         );
       }
 
@@ -143,8 +144,8 @@ class ExpenseProvider extends ChangeNotifier {
       notifyListeners();
       unawaited(
         AutoSyncService.pushExpenses(
-          expenses: _allExpenses,
-          deletedIds: _deletedIds,
+          expenses: [expense],
+          deletedIds: const {},
         ),
       );
     }
@@ -159,8 +160,8 @@ class ExpenseProvider extends ChangeNotifier {
     notifyListeners();
     unawaited(
       AutoSyncService.pushExpenses(
-        expenses: _allExpenses,
-        deletedIds: _deletedIds,
+        expenses: const [],
+        deletedIds: {id},
       ),
     );
   }
@@ -188,8 +189,8 @@ class ExpenseProvider extends ChangeNotifier {
       notifyListeners();
       unawaited(
         AutoSyncService.pushExpenses(
-          expenses: _allExpenses,
-          deletedIds: _deletedIds,
+          expenses: newlyImported,
+          deletedIds: const {},
         ),
       );
     }
