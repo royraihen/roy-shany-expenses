@@ -53,14 +53,10 @@
             </intent-filter>
 
             <!-- Handle sharing a .rasb file directly to the app via Android Share Sheet -->
-            <intent-filter android:label="Import .rasb Budget">
+            <intent-filter android:label="Roy &amp; Shany ₪">
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="application/vnd.royandshany.rasb" />
-                <data android:mimeType="application/rasb" />
-                <data android:mimeType="application/octet-stream" />
-                <data android:mimeType="application/json" />
-                <data android:mimeType="text/plain" />
+                <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
         <meta-data
