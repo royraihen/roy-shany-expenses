@@ -76,6 +76,23 @@ class RasbFileService {
     }
   }
 
+  /// Triggers a native OS notification on Android or a Web Notification on iPhone/Browser.
+  static Future<void> showExpenseNotification({
+    required String title,
+    required String body,
+  }) async {
+    if (kIsWeb) {
+      await triggerWebNotification(title: title, body: body);
+      return;
+    }
+    try {
+      await _channel.invokeMethod<void>('showExpenseNotification', {
+        'title': title,
+        'body': body,
+      });
+    } catch (_) {}
+  }
+
   /// Shares a 1-tap WhatsApp sync message + link that works on both iPhone and Android with 1 click.
   static Future<void> shareOneTapWhatsAppSync(Expense expense) async {
     final link = AutoSyncService.buildOneTapSyncUrl([expense]);

@@ -13,6 +13,11 @@ Future<void> saveWebPairingPassword(String password) async {}
 
 String? consumeInitialWebSyncParam() => null;
 
+Future<void> triggerWebNotification({
+  required String title,
+  required String body,
+}) async {}
+
 Future<void> shareRasbBytes({
   required String fileName,
   required String content,

@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import '../models/expense.dart';
 import '../services/auto_sync_service.dart';
 import '../services/database_helper.dart';
+import '../services/rasb_file_service.dart';
+import '../utils/formatters.dart';
 
 class MonthSummary {
   final int year;
@@ -44,6 +46,7 @@ class ExpenseProvider extends ChangeNotifier {
   final Set<String> _deletedIds = {};
   int _lastAppliedClearAllEpochMs = 0;
   String? _pairingPassword;
+  String? _pendingNotificationBanner;
   bool _isLoading = true;
   bool _isSyncingCloud = false;
   Timer? _autoSyncTimer;
@@ -67,6 +70,12 @@ class ExpenseProvider extends ChangeNotifier {
   String? get pairingPassword => _pairingPassword;
   bool get isPaired =>
       _pairingPassword != null && _pairingPassword!.trim().isNotEmpty;
+
+  String? consumeNotificationBanner() {
+    final msg = _pendingNotificationBanner;
+    _pendingNotificationBanner = null;
+    return msg;
+  }
 
   DateTime get now => DateTime.now();
 
@@ -130,14 +139,40 @@ class ExpenseProvider extends ChangeNotifier {
       }
 
       // Import any cloud expenses that we don't have locally yet
+      final List<Expense> newlyImportedExpenses = [];
       for (final remoteExpense in cloudState.expenses) {
         if (_deletedIds.contains(remoteExpense.id)) continue;
         final exists = await _dbHelper.expenseExists(remoteExpense.id);
         if (!exists) {
           await _dbHelper.insertExpense(remoteExpense);
           newlyImported++;
+          newlyImportedExpenses.add(remoteExpense);
           localChanged = true;
         }
+      }
+
+      if (newlyImportedExpenses.isNotEmpty) {
+        final String title;
+        final String body;
+        if (newlyImportedExpenses.length == 1) {
+          final e = newlyImportedExpenses.first;
+          title =
+              '💸 ${e.spenderName} added ${AppFormatters.formatShekel(e.amount)}';
+          body = '${e.reason} • ${e.creditCardUsed}';
+        } else {
+          title = '💸 ${newlyImportedExpenses.length} New Expenses Synced';
+          body = newlyImportedExpenses
+              .take(3)
+              .map(
+                (e) =>
+                    '${e.spenderName}: ${AppFormatters.formatShekel(e.amount)} (${e.reason})',
+              )
+              .join(', ');
+        }
+        _pendingNotificationBanner = '$title — $body';
+        unawaited(
+          RasbFileService.showExpenseNotification(title: title, body: body),
+        );
       }
 
       if (localChanged) {

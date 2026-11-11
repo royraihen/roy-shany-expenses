@@ -209,6 +209,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
           });
         }
 
+        final bannerMsg = provider.consumeNotificationBanner();
+        if (bannerMsg != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Row(
+                    children: [
+                      const Icon(
+                        Icons.notifications_active,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(child: Text(bannerMsg)),
+                    ],
+                  ),
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 5),
+                  backgroundColor: const Color(0xFF0F766E),
+                ),
+              );
+            }
+          });
+        }
+
         final now = provider.now;
         final currentMonthTitle = AppFormatters.formatMonthYear(now);
         final totalSpend = provider.currentMonthTotal;

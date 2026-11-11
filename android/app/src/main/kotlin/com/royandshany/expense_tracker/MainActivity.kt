@@ -1,6 +1,13 @@
 package com.royandshany.expense_tracker
 
+import android.Manifest
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
 import android.os.Build
@@ -11,14 +18,18 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import kotlin.random.Random
 
 class MainActivity : FlutterActivity() {
     private val channelName = "com.royandshany.expense_tracker/rasb"
+    private val notificationChannelId = "roy_shany_expenses_alerts"
     private var methodChannel: MethodChannel? = null
     private var pendingPayload: Map<String, String>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setupNotificationChannel()
+        requestNotificationPermissionIfNeeded()
         handleIncomingIntent(intent, notifyImmediately = false)
     }
 
@@ -28,13 +39,82 @@ class MainActivity : FlutterActivity() {
         methodChannel = channel
 
         channel.setMethodCallHandler { call, result ->
-            if (call.method == "getInitialRasbContent") {
-                val payload = pendingPayload
-                pendingPayload = null
-                result.success(payload)
-            } else {
-                result.notImplemented()
+            when (call.method) {
+                "getInitialRasbContent" -> {
+                    val payload = pendingPayload
+                    pendingPayload = null
+                    result.success(payload)
+                }
+                "showExpenseNotification" -> {
+                    val title = call.argument<String>("title") ?: "Roy & Shany ₪"
+                    val body = call.argument<String>("body") ?: "Expenses updated"
+                    showSystemNotification(title, body)
+                    result.success(true)
+                }
+                else -> result.notImplemented()
             }
+        }
+    }
+
+    private fun setupNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val channel = NotificationChannel(
+                notificationChannelId,
+                "Expense Updates",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Notifications when Roy or Shany adds or updates expenses"
+                enableVibration(true)
+            }
+            manager.createNotificationChannel(channel)
+        }
+    }
+
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1001)
+            }
+        }
+    }
+
+    private fun showSystemNotification(title: String, body: String) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                    return
+                }
+            }
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val openIntent = Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            } else {
+                PendingIntent.FLAG_UPDATE_CURRENT
+            }
+            val pendingIntent = PendingIntent.getActivity(this, 0, openIntent, pendingFlags)
+
+            val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Notification.Builder(this, notificationChannelId)
+            } else {
+                @Suppress("DEPRECATION")
+                Notification.Builder(this)
+            }
+
+            val notification = builder
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setStyle(Notification.BigTextStyle().bigText(body))
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .build()
+
+            manager.notify(Random.nextInt(1000, 999999), notification)
+        } catch (_: Exception) {
         }
     }
 

@@ -41,6 +41,37 @@ String? consumeInitialWebSyncParam() {
   return null;
 }
 
+Future<void> triggerWebNotification({
+  required String title,
+  required String body,
+}) async {
+  try {
+    final permission = web.Notification.permission;
+    if (permission == 'granted') {
+      web.Notification(
+        title,
+        web.NotificationOptions(
+          body: body,
+          icon: 'icons/Icon-192.png',
+        ),
+      );
+    } else if (permission != 'denied') {
+      final result = (await web.Notification.requestPermission().toDart).toDart;
+      if (result == 'granted') {
+        web.Notification(
+          title,
+          web.NotificationOptions(
+            body: body,
+            icon: 'icons/Icon-192.png',
+          ),
+        );
+      }
+    }
+  } catch (_) {
+    // Ignore on browsers where Notification API is restricted
+  }
+}
+
 Future<void> shareRasbBytes({
   required String fileName,
   required String content,
